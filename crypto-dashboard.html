@@ -1,12 +1,24 @@
 <link rel="import" href="bower_components/polymer/polymer-element.html">
 <link rel="import" href="bower_components/iron-ajax/iron-ajax.html">
+<link rel="import" href="bower_components/paper-spinner/paper-spinner-lite.html">
+<script src="bower_components/chart.js/dist/Chart.js"></script>
 
 <dom-module id="crypto-dashboard">
     <template>
-        <h2>hello jaye</h2>
-        <iron-ajax id="coinbase" handle-as="json" on-response="_handleResponse">
+        <h2>Crypto Dashboard</h2>
+        <iron-ajax id="coinbase" handle-as="json" on-response="_handleResponse" loading="{{loading}}"></iron-ajax>
+        
+        <paper-spinner-lite active="[[loading]]"></paper-spinner-lite>
+        
+        <div hidden$="[[loading]]">
+            <template is="dom-repeat" items="[[currencies]]">
+                <p>[[item.code]] - [[item.name]] - $[[item.price]]</p>
+            </template>
+        </div>
 
-        </iron-ajax>
+        <div hidden$="[[loading]]" style="width:100%; max-width: 700px; margin:0 auto">
+            <canvas height="2" width="4" id="canvas"></canvas>
+        </div>
     </template>
 
     <script>
@@ -19,18 +31,27 @@
                         value: [
                             {
                                 code: "BTC",
-                                name: "Bitcoin"
+                                name: "Bitcoin",
+                                price: 0
                             },
                             {
                                 code: "ETH",
-                                name: "Ethereum"
+                                name: "Ethereum",
+                                price: 0
                             },
                             {
                                 code: "LTC",
-                                name: "Litecoin"
+                                name: "Litecoin",
+                                price: 0
                             }
                         ]
-                    }
+                    },
+                    loading: {
+                        type: Boolean,
+                        notify: true,
+                        value: false
+                    },
+                    myLineChart:{}
                 }
             }
 
@@ -38,6 +59,7 @@
                 super.ready();
                 Polymer.RenderStatus.afterNextRender(this, function () {
                     this._getCurrencyData();
+                    this._getCurrencyHistoricData(this.currencies[0].code);
                 })
             }
 
@@ -50,8 +72,78 @@
                 }, this);
             }
 
+            _getCurrencyHistoricData(currency){
+                var ajax = this.$.coinbase;
+                ajax.url = "https://api.coinbase.com/v2/prices/" + currency + "-USD/historic?period=week";
+                ajax.generateRequest();
+            }
+
             _handleResponse(response) {
-                console.log(response);
+                if (response.detail.response.data.amount != null) {
+                    this._computeCurrencyPrice(response.detail);
+                }
+                else {
+                    this._computeGraph(response.detail);
+                }
+            }
+
+            _computeCurrencyPrice(data) {
+                var code = data.url.substring(35,38);
+                var index = this.currencies.map(function (e) {
+                    return e.code;
+                    }).indexOf(code);
+                this.set("currencies." + index + ".price", data.response.data.amount);
+            }
+            _computeGraph (data){
+                var code = data.url.substring(35,38);
+                var label = [];
+                var price = [];
+                data.response.data.prices.forEach( function (element) {
+                    label.push(element.time);
+                    price.push(element.price);
+                },this);
+                this._generateLineChart(label, price, code);
+            }
+
+            _generateLineChart (label, price, labelName) {
+                if(this.myLineChart !== undefined) this.myLineChart.destroy();   
+                var ctx = this.$.canvas.getContext('2d');
+                this.myLineChart = new Chart (ctx, {
+                    type: "line",
+                    data: {
+                        labels: label.reverse(),
+                        datasets: [
+                            {
+                                pointRadius: 0,
+                                label: labelName,
+                                backgroundColor: "rgba(111, 124, 186, 0.1)",
+                                borderColor: "rgba(111, 124, 186, 1)",
+                                borderWidth: 2,
+                                data: price.reverse()
+                        
+                            }
+                        ]
+                    },
+                    options: {
+                        animation: false,
+                        tooltips: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        scales: {
+                            xAxes: [{
+                                gridlines: {
+                                    display: false
+                                }
+                            }],
+                            yAxes: [{
+                                gridlines: {
+                                    display: false
+                                }
+                            }]
+                        }
+                    }
+                })         
             }
         }
         window.customElements.define(CryptoDashboard.is, CryptoDashboard);
